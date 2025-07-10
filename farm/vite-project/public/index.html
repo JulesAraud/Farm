@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Farm Simulator</title>
+  <script defer src="app.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    section { margin-bottom: 30px; }
+    label, select, input, button { display: block; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <h1>Gestion de la Ferme</h1>
+
+  <section>
+    <h2>Créer un nouveau champ</h2>
+    <label for="newChampId">ID du champ :</label>
+    <input type="number" id="newChampId" />
+    <label for="newChampLot">Lot :</label>
+    <input type="text" id="newChampLot" />
+    <button id="creerChampBtn">Créer</button>
+  </section>
+
+
+
+<section>
+  <h2>Labourer les champs</h2>
+  <button id="labourerBtn">Labourer</button>
+</section>
+
+
+
+    <section>
+    <h2>Semer un champ</h2>
+    <select id="champSelect"></select>
+<label for="cultureSelect">Culture :</label>
+<select id="cultureSelect">
+  <option value="blé">blé</option>
+  <option value="orge">orge</option>
+  <option value="soja">soja</option>
+  <option value="avoine">avoine</option>
+  <option value="canola">canola</option>
+  <option value="raisin">raisin</option>
+  <option value="olive">olive</option>
+  <option value="pomme de terre">pomme de terre</option>
+  <option value="betterave">betterave</option>
+  <option value="coton">coton</option>
+  <option value="maïs">maïs</option>
+  <option value="tournesol">tournesol</option>
+  <option value="canne à sucre">canne à sucre</option>
+  <option value="légumes">légumes</option>
+  <option value="épinard">épinard</option>
+  <option value="pois">pois</option>
+  <option value="haricots verts">haricots verts</option>
+  <option value="peuplier">peuplier</option>
+</select>
+
+
+    <button id="semerBtn">Semer</button>
+  </section>
+
+<section>
+  <h2>Fertiliser tous les champs semés</h2>
+  <button onclick="fertiliserTous()">Fertiliser</button>
+</section>
+
+
+
+<section>
+  <h2>Récolter les champs</h2>
+  <button id="recolterBtn">Récolter tous les champs prêts</button>
+</section>
+
+
+  <section>
+  <h2>Transformer</h2>
+  <label for="usineSelect">Choisir une usine :</label>
+  <select id="usineSelect"></select>
+  <button id="transformerBtn">Transformer</button>
+</section>
+
+
+  <div id="message"></div>
+</body>
+</html>

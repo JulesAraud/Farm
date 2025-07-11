@@ -201,5 +201,5 @@ setInterval(() => {
 
 setInterval(() => {
   location.reload();
-}, 30000);
+}, 60000);
 

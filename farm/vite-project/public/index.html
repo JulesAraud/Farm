@@ -94,5 +94,26 @@
 
 
   <div id="message"></div>
+
+<section>
+  <h2>Vente</h2>
+  <p>Stock actuel : <span id="stockActuel">...</span> L</p>
+  <p>Revenu total : <span id="revenuTotal">...</span> 💰</p>
+</section>
+<section>
+  <label for="produitSelect">Produit :</label>
+  <select id="produitSelect"></select>
+
+  <label for="quantiteProduitVente">Quantité à vendre :</label>
+  <input type="number" id="quantiteProduitVente" min="1" />
+
+  <button id="vendreProduitBtn">Vendre le produit</button>
+
+  <p id="venteMessage" style="font-weight: bold; color: green;"></p>
+</section>
+
+
+
+
 </body>
 </html>

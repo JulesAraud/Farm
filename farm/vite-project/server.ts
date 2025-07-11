@@ -184,6 +184,49 @@ app.post('/labourer', async (_req: Request, res: Response) => {
   }
 });
 
+app.get('/ferme', async (_req, res) => {
+  const conn = await mysql.createConnection(dbConfig);
+  const [rows] = await conn.query('SELECT stockage, revenu_total FROM ferme WHERE id = 1');
+  await conn.end();
+  res.json(rows[0]);
+});
+
+app.get('/produits-transformes', async (_req, res) => {
+  const conn = await mysql.createConnection(dbConfig);
+  const [rows] = await conn.query('SELECT produit, quantite FROM produits_transformes');
+  await conn.end();
+  res.json(rows);
+});
+
+app.post('/vendre-produit', async (req: Request, res: Response) => {
+  const { produit, quantite } = req.body;
+
+  if (!produit || !quantite || isNaN(quantite) || quantite <= 0) {
+    return res.status(400).json({ error: "Données invalides" });
+  }
+
+  const conn = await mysql.createConnection(dbConfig);
+  try {
+    const [rows] = await conn.query('SELECT quantite FROM produits_transformes WHERE produit = ?', [produit]);
+    const actuel = (rows as any[])[0]?.quantite || 0;
+
+    if (quantite > actuel) {
+      await conn.end();
+      return res.status(400).json({ error: "Quantité demandée supérieure au stock" });
+    }
+
+    await conn.execute('UPDATE produits_transformes SET quantite = quantite - ? WHERE produit = ?', [quantite, produit]);
+    await conn.execute('UPDATE ferme SET revenu_total = revenu_total + ?, stockage = stockage - ? WHERE id = 1', [quantite, quantite]);
+    await conn.end();
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Erreur /vendre-produit :", err);
+    await conn.end();
+    res.status(500).json({ error: "Erreur serveur" });
+  }
+});
+
 
 app.post('/fertiliser', async (_req: Request, res: Response) => {
   try {
@@ -315,26 +358,38 @@ app.post('/transformer', async (req: Request, res: Response) => {
     );
     const intrants = (intrantsRows as any[]).map(row => row.intrant);
 
-    // Charger le stock actuel
+    // Charger le stock
     const [stockRows] = await conn.query('SELECT * FROM stockage_culture');
-    const stock: Record<string, number> = {};
-    (stockRows as any[]).forEach(row => stock[row.culture] = row.quantite);
-
+    const [transformeRows] = await conn.query('SELECT * FROM produits_transformes');
     const [fermeRows] = await conn.query('SELECT stockage FROM ferme WHERE id = 1');
+
+    const stockCulture: Record<string, number> = {};
+    const stockTransforme: Record<string, number> = {};
+
+    (stockRows as any[]).forEach(r => stockCulture[r.culture] = r.quantite);
+    (transformeRows as any[]).forEach(r => stockTransforme[r.produit] = r.quantite);
+
     let stockageActuel = (fermeRows as any[])[0]?.stockage || 0;
     const maxStock = 100_000;
     const capaciteParTick = 100;
-
     let produitTotal = 0;
 
     const attendre = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
     if (usineInfo.quantiteEgale) {
-      let minDispo = Math.min(...intrants.map(i => stock[i] || 0));
+      let minDispo = Math.min(...intrants.map(i =>
+        (stockCulture[i] || 0) + (stockTransforme[i] || 0)
+      ));
+
       while (minDispo > 0 && stockageActuel + produitTotal < maxStock) {
         for (const intrant of intrants) {
-          await conn.execute('UPDATE stockage_culture SET quantite = quantite - 1 WHERE culture = ?', [intrant]);
-          stock[intrant]--;
+          if ((stockCulture[intrant] || 0) > 0) {
+            await conn.execute('UPDATE stockage_culture SET quantite = quantite - 1 WHERE culture = ?', [intrant]);
+            stockCulture[intrant]--;
+          } else if ((stockTransforme[intrant] || 0) > 0) {
+            await conn.execute('UPDATE produits_transformes SET quantite = quantite - 1 WHERE produit = ?', [intrant]);
+            stockTransforme[intrant]--;
+          }
         }
 
         const produit = usineInfo.multiplicateur * intrants.length;
@@ -345,13 +400,31 @@ app.post('/transformer', async (req: Request, res: Response) => {
         stockageActuel += produit;
 
         await attendre(1000);
-        minDispo = Math.min(...intrants.map(i => stock[i] || 0));
+        minDispo = Math.min(...intrants.map(i =>
+          (stockCulture[i] || 0) + (stockTransforme[i] || 0)
+        ));
       }
+
     } else {
       for (const intrant of intrants) {
-        while ((stock[intrant] || 0) >= capaciteParTick && stockageActuel + produitTotal < maxStock) {
-          await conn.execute('UPDATE stockage_culture SET quantite = quantite - ? WHERE culture = ?', [capaciteParTick, intrant]);
-          stock[intrant] -= capaciteParTick;
+        while (((stockCulture[intrant] || 0) + (stockTransforme[intrant] || 0)) >= capaciteParTick &&
+               stockageActuel + produitTotal < maxStock) {
+
+          let reste = capaciteParTick;
+
+          if ((stockCulture[intrant] || 0) > 0) {
+            const aPrendre = Math.min(reste, stockCulture[intrant]);
+            await conn.execute('UPDATE stockage_culture SET quantite = quantite - ? WHERE culture = ?', [aPrendre, intrant]);
+            stockCulture[intrant] -= aPrendre;
+            reste -= aPrendre;
+          }
+
+          if (reste > 0 && (stockTransforme[intrant] || 0) > 0) {
+            const aPrendre = Math.min(reste, stockTransforme[intrant]);
+            await conn.execute('UPDATE produits_transformes SET quantite = quantite - ? WHERE produit = ?', [aPrendre, intrant]);
+            stockTransforme[intrant] -= aPrendre;
+            reste -= aPrendre;
+          }
 
           const produit = usineInfo.multiplicateur * capaciteParTick;
           await conn.execute('UPDATE produits_transformes SET quantite = quantite + ? WHERE produit = ?', [produit, usineInfo.resultat]);
@@ -364,6 +437,8 @@ app.post('/transformer', async (req: Request, res: Response) => {
         }
       }
     }
+
+    // Mise à jour finale
     await conn.execute(
       'UPDATE usines SET quantite_produite = ?, derniere_production = NOW() WHERE id = ?',
       [produitTotal, usineInfo.id]
@@ -392,6 +467,48 @@ app.post('/transformer', async (req: Request, res: Response) => {
 });
 
 
+app.post('/vendre-stockage', async (_req: Request, res: Response) => {
+  const conn = await mysql.createConnection(dbConfig);
+
+  try {
+    const [rows] = await conn.query('SELECT stockage FROM ferme WHERE id = 1');
+    const stockage = (rows as any[])[0]?.stockage || 0;
+
+    if (stockage <= 0) {
+      await conn.end();
+      return res.status(400).json({ error: 'Aucun stock à vendre.' });
+    }
+
+    await conn.execute('UPDATE ferme SET stockage = 0, revenu_total = revenu_total + ? WHERE id = 1', [stockage]);
+
+    await conn.end();
+    res.json({ success: true, message: `💰 Vous avez vendu ${stockage}L de stockage pour ${stockage} pièces.` });
+  } catch (err) {
+    console.error('Erreur /vendre-stockage :', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+app.post('/vendre-quantite', async (req: Request, res: Response) => {
+  const { quantite } = req.body;
+
+  try {
+    const conn = await mysql.createConnection(dbConfig);
+    const [rows] = await conn.query('SELECT stockage, revenu_total FROM ferme WHERE id = 1');
+    const ferme = (rows as any[])[0];
+
+    if (!ferme || quantite > ferme.stockage) {
+      await conn.end();
+      return res.status(400).json({ error: 'Quantité invalide ou stock insuffisant' });
+    }
+
+    await conn.execute('UPDATE ferme SET stockage = stockage - ?, revenu_total = revenu_total + ? WHERE id = 1', [quantite, quantite]);
+    await conn.end();
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
 
 
 

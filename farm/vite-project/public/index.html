@@ -1,18 +1,14 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>Farm Simulator</title>
+  <link rel="stylesheet" href="style.css">
   <script defer src="app.js"></script>
-  <style>
-    body { font-family: Arial, sans-serif; padding: 20px; }
-    section { margin-bottom: 30px; }
-    label, select, input, button { display: block; margin-top: 10px; }
-  </style>
 </head>
+
 <body>
   <h1>Gestion de la Ferme</h1>
-
   <section>
     <h2>Créer un nouveau champ</h2>
     <label for="newChampId">ID du champ :</label>
@@ -22,19 +18,16 @@
     <button id="creerChampBtn">Créer</button>
   </section>
 
-
-
 <section>
   <h2>Labourer les champs</h2>
   <button id="labourerBtn">Labourer</button>
 </section>
 
-
-
-    <section>
-    <h2>Semer un champ</h2>
+<section>
+    <h2>Semer le champ</h2>
     <select id="champSelect"></select>
-<label for="cultureSelect">Culture :</label>
+    <label for="cultureSelect">Culture :</label>
+
 <select id="cultureSelect">
   <option value="blé">blé</option>
   <option value="orge">orge</option>
@@ -56,23 +49,18 @@
   <option value="peuplier">peuplier</option>
 </select>
 
-
     <button id="semerBtn">Semer</button>
-  </section>
+</section>
 
 <section>
   <h2>Fertiliser tous les champs semés</h2>
   <button onclick="fertiliserTous()">Fertiliser</button>
 </section>
 
-
-
 <section>
   <h2>Récolter les champs</h2>
-  <button id="recolterBtn">Récolter tous les champs prêts</button>
+  <button id="recolterBtn">Récolter</button>
 </section>
-
-
 
 <section>
   <h2>Transformation</h2>
@@ -86,13 +74,9 @@
   <ul id="usinesEnCours"></ul>
 </section>
 
-
 <div id="message" style="margin-top: 20px; font-weight: bold;"></div>
 
-
 <div id="transformResult"></div>
-
-
   <div id="message"></div>
 
 <section>
@@ -100,20 +84,15 @@
   <p>Stock actuel : <span id="stockActuel">...</span> L</p>
   <p>Revenu total : <span id="revenuTotal">...</span> 💰</p>
 </section>
+
 <section>
   <label for="produitSelect">Produit :</label>
   <select id="produitSelect"></select>
-
   <label for="quantiteProduitVente">Quantité à vendre :</label>
   <input type="number" id="quantiteProduitVente" min="1" />
-
   <button id="vendreProduitBtn">Vendre le produit</button>
-
   <p id="venteMessage" style="font-weight: bold; color: green;"></p>
 </section>
-
-
-
 
 </body>
 </html>

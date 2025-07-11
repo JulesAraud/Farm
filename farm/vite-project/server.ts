@@ -77,7 +77,7 @@ app.post('/recolter', async (_req: Request, res: Response) => {
 
     const rendements: Record<string, number> = {
       blé: 1000, orge: 1000, soja: 1000, avoine: 1000, canola: 1000,
-      raisin: 1500, olive: 1500, 'pomme de terre': 5000, betterave: 3500,
+      raisin: 1500, olive: 1500, 'pomme de terre': 5000, betterave: 3500, 
       coton: 750, maïs: 3000, tournesol: 3000, 'canne à sucre': 5000,
       légumes: 2500, épinard: 3000, pois: 7500, 'haricots verts': 7500, peuplier: 1500
     };
@@ -219,16 +219,30 @@ app.post('/fertiliser', async (_req: Request, res: Response) => {
 
 
 
-app.get('/usines-disponibles', async (_req: Request, res: Response) => {
+app.get('/usines-disponibles', async (_req, res) => {
+  const conn = await mysql.createConnection(dbConfig);
   try {
-    const conn = await mysql.createConnection(dbConfig);
-    const [rows] = await conn.query('SELECT nom FROM usines WHERE dispo IS NULL');
-    await conn.end();
+    const [rows] = await conn.query('SELECT * FROM usines WHERE dispo IS NULL');
     res.json(rows);
   } catch (err) {
-    console.error('Erreur /usines-disponibles:', err);
+    console.error('Erreur /usines-disponibles :', err);
     res.status(500).json({ error: 'Erreur serveur' });
+  } finally {
+    await conn.end();
   }
+});
+
+app.get('/usines-utilisation', async (_req, res) => {
+  const conn = await mysql.createConnection(dbConfig);
+
+  const [rows] = await conn.query(`
+    SELECT nom, resultat, derniere_production, quantite_produite
+    FROM usines
+    WHERE dispo = 1
+  `);
+
+  await conn.end();
+  res.json(rows);
 });
 
 
@@ -245,6 +259,7 @@ app.post('/usine/occupee', async (req: Request, res: Response) => {
   }
 });
 
+
 app.post('/usine/liberer', async (req: Request, res: Response) => {
   const { nom } = req.body;
   try {
@@ -258,84 +273,126 @@ app.post('/usine/liberer', async (req: Request, res: Response) => {
   }
 });
 
+
+async function getIntrants(nomUsine: string): Promise<string[]> {
+  const mapping: Record<string, string[]> = {
+    'Moulin à huile': ['tournesol', 'olive', 'canola', 'riz'],
+    'Scierie': ['peuplier'],
+    'Fabrique de wagons': ['planches'],
+    'Usine de jouets': ['planches'],
+    'Moulin à grains': ['blé', 'orge', 'sorgho'],
+    'Raffinerie de sucre': ['betterave', 'canne à sucre'],
+    'Filature': ['coton'],
+    'Atelier de couture': ['tissu'],
+    'Boulangerie': ['sucre', 'farine'],
+    'Usine de chips': ['pomme de terre', 'huile'],
+    'Cave à vin': ['raisin']
+  };
+  return mapping[nomUsine] || [];
+}
+
+
 app.post('/transformer', async (req: Request, res: Response) => {
   const { usine } = req.body;
   const conn = await mysql.createConnection(dbConfig);
 
   try {
-    // 1. Vérifier que l'usine est disponible
-    const [rows]: any[] = await conn.query('SELECT * FROM usines WHERE nom = ?', [usine]);
-    const usineRow = rows[0];
+    const [usineRows] = await conn.query('SELECT * FROM usines WHERE nom = ?', [usine]);
+    const usineInfo = (usineRows as any[])[0];
 
-    if (!usineRow) {
+    if (!usineInfo || usineInfo.dispo === 1) {
       await conn.end();
-      return res.status(404).json({ error: 'Usine introuvable ou indisponible' });
+      return res.status(400).json({ error: 'Usine indisponible ou introuvable' });
     }
 
-    const multiplicateur = usineRow.multiplicateur;
-    const quantiteEgale = !!usineRow.quantiteEgale;
-    const resultat = usineRow.resultat;
+    // Marquer l'usine comme occupée
+    await conn.execute('UPDATE usines SET dispo = 1 WHERE id = ?', [usineInfo.id]);
 
-    // 2. Récupérer les intrants associés à cette usine
+    // Charger les intrants
     const [intrantsRows] = await conn.query(
-      'SELECT intrant FROM usines_intrants WHERE nom_usine = ?',
-      [usine]
+      'SELECT intrant FROM usines_intrants WHERE usine_id = ?',
+      [usineInfo.id]
     );
     const intrants = (intrantsRows as any[]).map(row => row.intrant);
 
-    // 3. Récupérer les quantités actuelles en stockage
-    const [stockRows] = await conn.query('SELECT culture, quantite FROM stockage_culture');
+    // Charger le stock actuel
+    const [stockRows] = await conn.query('SELECT * FROM stockage_culture');
     const stock: Record<string, number> = {};
-    (stockRows as any[]).forEach(r => stock[r.culture] = r.quantite);
+    (stockRows as any[]).forEach(row => stock[row.culture] = row.quantite);
 
+    const [fermeRows] = await conn.query('SELECT stockage FROM ferme WHERE id = 1');
+    let stockageActuel = (fermeRows as any[])[0]?.stockage || 0;
+    const maxStock = 100_000;
     const capaciteParTick = 100;
-    let produit = 0;
 
-    if (quantiteEgale) {
-      const min = Math.min(...intrants.map(i => stock[i] || 0));
-      if (min === 0) return res.status(400).json({ error: 'Intrants insuffisants' });
+    let produitTotal = 0;
 
-      for (const i of intrants) {
-        await conn.execute(
-          'UPDATE stockage_culture SET quantite = quantite - ? WHERE culture = ?',
-          [min, i]
-        );
+    const attendre = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+    if (usineInfo.quantiteEgale) {
+      let minDispo = Math.min(...intrants.map(i => stock[i] || 0));
+      while (minDispo > 0 && stockageActuel + produitTotal < maxStock) {
+        for (const intrant of intrants) {
+          await conn.execute('UPDATE stockage_culture SET quantite = quantite - 1 WHERE culture = ?', [intrant]);
+          stock[intrant]--;
+        }
+
+        const produit = usineInfo.multiplicateur * intrants.length;
+        await conn.execute('UPDATE produits_transformes SET quantite = quantite + ? WHERE produit = ?', [produit, usineInfo.resultat]);
+        await conn.execute('UPDATE ferme SET stockage = stockage + ? WHERE id = 1', [produit]);
+
+        produitTotal += produit;
+        stockageActuel += produit;
+
+        await attendre(1000);
+        minDispo = Math.min(...intrants.map(i => stock[i] || 0));
       }
-
-      const totalIn = min * intrants.length;
-      produit = totalIn * multiplicateur;
     } else {
-      const intrant = intrants.find(i => (stock[i] || 0) >= capaciteParTick);
-      if (!intrant) return res.status(400).json({ error: 'Intrants insuffisants' });
+      for (const intrant of intrants) {
+        while ((stock[intrant] || 0) >= capaciteParTick && stockageActuel + produitTotal < maxStock) {
+          await conn.execute('UPDATE stockage_culture SET quantite = quantite - ? WHERE culture = ?', [capaciteParTick, intrant]);
+          stock[intrant] -= capaciteParTick;
 
-      await conn.execute(
-        'UPDATE stockage_culture SET quantite = quantite - ? WHERE culture = ?',
-        [capaciteParTick, intrant]
-      );
-      produit = capaciteParTick * multiplicateur;
+          const produit = usineInfo.multiplicateur * capaciteParTick;
+          await conn.execute('UPDATE produits_transformes SET quantite = quantite + ? WHERE produit = ?', [produit, usineInfo.resultat]);
+          await conn.execute('UPDATE ferme SET stockage = stockage + ? WHERE id = 1', [produit]);
+
+          produitTotal += produit;
+          stockageActuel += produit;
+
+          await attendre(1000);
+        }
+      }
     }
-
-    // 4. Vérifier capacité de stockage
-    const [[ferme]] = await conn.query('SELECT stockage FROM ferme WHERE id = 1');
-    if ((ferme.stockage + produit) > 100_000) {
-      return res.status(400).json({ error: 'Stockage plein, usine mise en pause' });
-    }
-
-    // 5. Ajouter la production
     await conn.execute(
-      'INSERT INTO stockage_culture (culture, quantite) VALUES (?, ?) ON DUPLICATE KEY UPDATE quantite = quantite + ?',
-      [resultat, produit, produit]
+      'UPDATE usines SET quantite_produite = ?, derniere_production = NOW() WHERE id = ?',
+      [produitTotal, usineInfo.id]
     );
-    await conn.execute('UPDATE ferme SET stockage = stockage + ? WHERE id = 1', [produit]);
 
-    res.json({ success: true, produit });
-  } catch (err) {
-    console.error('Erreur transformation :', err);
-    res.status(500).json({ error: 'Erreur serveur' });
-  } finally {
+    // Libérer l'usine
+    await conn.execute('UPDATE usines SET dispo = NULL WHERE id = ?', [usineInfo.id]);
     await conn.end();
+
+    if (produitTotal === 0) {
+      return res.status(400).json({ error: 'Pas assez d’intrants ou stockage plein' });
+    }
+
+    res.json({
+      success: true,
+      produit: produitTotal,
+      message: `✅ L'usine '${usine}' a traité ${produitTotal} L.`
+    });
+
+  } catch (err) {
+    console.error('Erreur /transformer :', err);
+    await conn.execute('UPDATE usines SET dispo = NULL WHERE nom = ?', [usine]);
+    await conn.end();
+    res.status(500).json({ error: 'Erreur serveur' });
   }
 });
+
+
+
 
 
 app.get('/stockage', async (_req, res) => {

@@ -73,12 +73,24 @@
 </section>
 
 
-  <section>
-  <h2>Transformer</h2>
+
+<section>
+  <h2>Transformation</h2>
   <label for="usineSelect">Choisir une usine :</label>
   <select id="usineSelect"></select>
-  <button id="transformerBtn">Transformer</button>
+  <button onclick="transformerUsine()">Lancer la transformation</button>
 </section>
+
+<section>
+  <h2>Usines en cours</h2>
+  <ul id="usinesEnCours"></ul>
+</section>
+
+
+<div id="message" style="margin-top: 20px; font-weight: bold;"></div>
+
+
+<div id="transformResult"></div>
 
 
   <div id="message"></div>

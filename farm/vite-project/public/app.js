@@ -39,96 +39,77 @@ async function semerChamp() {
   });
 
   const data = await res.json();
-  if (data.success) {
-    alert('Champ semé avec succès');
-    chargerChamps();
-  } else {
-    alert('Erreur lors du semis');
-  }
+  alert(data.success ? 'Champ semé avec succès' : 'Erreur lors du semis');
+  chargerChamps();
 }
-
 
 async function labourerChamps() {
   const res = await fetch('/labourer', { method: 'POST' });
   const data = await res.json();
-
-  if (data.success) {
-    alert(`✅ Champs labourés : ${data.updated || 0}`);
-    chargerChamps();
-  } else {
-    alert('Erreur lors du labourage');
-  }
-}
-
-
-
-
-async function fertiliserChamp() {
-  const id = document.getElementById('champSelect').value;
-
-  const res = await fetch('/fertiliser', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id })
-  });
-
-  const data = await res.json();
-  if (data.success) {
-    alert('Champ fertilisé avec succès');
-    chargerChamps();
-  } else {
-    alert('Erreur : ' + data.error);
-  }
+  alert(data.success ? `✅ Champs labourés : ${data.updated || 0}` : 'Erreur lors du labourage');
+  chargerChamps();
 }
 
 async function fertiliserTous() {
-  const res = await fetch('/fertiliser', {
-    method: 'POST',
-  });
-
+  const res = await fetch('/fertiliser', { method: 'POST' });
   const data = await res.json();
-  if (data.success) {
-    alert(data.message);
-    chargerChamps();
-  } else {
-    alert(data.message || 'Erreur lors de la fertilisation.');
-  }
+  alert(data.success ? data.message : data.message || 'Erreur lors de la fertilisation');
+  chargerChamps();
 }
-
 
 async function recolterChamps() {
-  const res = await fetch('/recolter', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' }
-  });
-
+  const res = await fetch('/recolter', { method: 'POST' });
   const data = await res.json();
-  if (data.success) {
-    alert(`🌾 Champs récoltés : ${data.champsRecoltés.join(', ')}`);
-    chargerChamps();
-  } else {
-    alert('Erreur : ' + data.error);
-  }
+  alert(data.success ? `🌾 Champs récoltés : ${data.champsRecoltés.join(', ')}` : 'Erreur : ' + data.error);
+  chargerChamps();
 }
 
-
-async function chargerUsinesDisponibles() {
-  const res = await fetch('/usines-disponibles');
+async function chargerUsines() {
+  const res = await fetch('/usines-disponibles'); // 🔁 Mise à jour du bon endpoint
   const usines = await res.json();
 
   const select = document.getElementById('usineSelect');
   select.innerHTML = '';
 
-  usines.forEach(u => {
+  usines.forEach(usine => {
     const option = document.createElement('option');
-    option.value = u.nom;
-    option.textContent = u.nom;
+    option.value = usine.nom;
+    option.textContent = `${usine.nom}`;
     select.appendChild(option);
+
+  if (usines.length === 0) {
+  const option = document.createElement('option');
+  option.textContent = 'Aucune usine disponible';
+  option.disabled = true;
+  select.appendChild(option);
+}
+
   });
 }
 
-async function transformer() {
-  const usine = document.getElementById('usineSelect').value;
+async function chargerUsinesEnCours() {
+  const res = await fetch('/usines-utilisation');
+  const usines = await res.json();
+
+  const ul = document.getElementById('usinesEnCours');
+  ul.innerHTML = '';
+
+  if (usines.length === 0) {
+    ul.innerHTML = '<li>Aucune usine en fonctionnement</li>';
+    return;
+  }
+
+  usines.forEach(usine => {
+    const li = document.createElement('li');
+    li.textContent = `${usine.nom} → ${usine.resultat} (${usine.quantite_produite} L)`;
+    ul.appendChild(li);
+  });
+}
+
+
+async function transformerUsine() {
+  const select = document.getElementById('usineSelect');
+  const usine = select.value;
 
   const res = await fetch('/transformer', {
     method: 'POST',
@@ -137,29 +118,26 @@ async function transformer() {
   });
 
   const data = await res.json();
-  alert(data.success ? `Transformation réussie : ${data.produit}L produits` : 'Erreur: ' + data.error);
+  const messageDiv = document.getElementById('message');
+  messageDiv.textContent = res.ok && data.success ? data.message : data.error || 'Erreur inconnue';
 }
-
-
-
 
 window.onload = () => {
   chargerChamps();
-  chargerUsinesDisponibles();
+  chargerUsines();
+  chargerUsinesEnCours();
+
   document.getElementById('creerChampBtn')?.addEventListener('click', creerChamp);
   document.getElementById('semerBtn')?.addEventListener('click', semerChamp);
-const boutonRecolter = document.getElementById('recolterBtn');
-if (boutonRecolter) {
-  boutonRecolter.addEventListener('click', recolterChamps);
-}
-const boutonLabourer = document.getElementById('labourerBtn');
-if (boutonLabourer) {
-  boutonLabourer.addEventListener('click', labourerChamps);
-}
-  document.getElementById('fertiliserBtn')?.addEventListener('click', fertiliserChamp);
-  document.getElementById('transformerBtn')?.addEventListener('click', transformer);
+  document.getElementById('recolterBtn')?.addEventListener('click', recolterChamps);
+  document.getElementById('labourerBtn')?.addEventListener('click', labourerChamps);
+  document.getElementById('fertiliserBtn')?.addEventListener('click', fertiliserTous);
+  document.getElementById('transformerBtn')?.addEventListener('click', transformerUsine);
 };
 
+// Rafraîchit la liste toutes les 5 secondes
 setInterval(() => {
   chargerChamps();
-}, 5000); // rafraîchit la liste toutes les 5 secondes
+  chargerUsinesEnCours();
+
+}, 5000);

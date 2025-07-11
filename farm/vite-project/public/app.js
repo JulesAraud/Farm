@@ -198,3 +198,8 @@ setInterval(() => {
   chargerChamps();
   chargerUsinesEnCours();
 }, 5000);
+
+setInterval(() => {
+  location.reload();
+}, 30000);
+
